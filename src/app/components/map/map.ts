@@ -65,13 +65,6 @@ export class Map implements AfterViewInit {
   private parroquiasGeoJsonData: any = null;
   private parroquiaCentros: Record<string, L.LatLng> = {};
   private areaPorEstado: Record<string, number> = {};
-  private capaEtiquetas = L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
-    {
-      zIndex: 1000,
-      pane: 'markerPane',
-    },
-  );
   @ViewChild('mapContainer') mapContainer!: ElementRef;
 
   private map!: L.Map;
@@ -106,10 +99,14 @@ export class Map implements AfterViewInit {
     },
   );
 
-  // Tiles base: CartoDB Voyager (Versión completa con calles y detalles)
+  // Tiles base: Google Maps Estándar
   private tileBase = L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    { zIndex: 1 },
+    'http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    {
+      maxZoom: 20,
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+      zIndex: 1,
+    },
   );
 
   constructor() {
@@ -173,11 +170,9 @@ export class Map implements AfterViewInit {
       // --- LÓGICA CAPA COTAS ---
       if (estado.cotas) {
         this.capaCotas.addTo(this.map);
-        this.map.removeLayer(this.capaEtiquetas);
         this.map.removeLayer(this.tileBase); // Ocultar base para evitar duplicados
       } else {
         this.map.removeLayer(this.capaCotas);
-        this.capaEtiquetas.addTo(this.map);
         this.tileBase.addTo(this.map); // Restaurar base
       }
 
@@ -340,7 +335,6 @@ export class Map implements AfterViewInit {
     });
 
     this.tileBase.addTo(this.map);
-    this.capaEtiquetas.addTo(this.map);
 
     // Crear un panel especial para la electricidad para que esté siempre encima de los polígonos
     const electricPane = this.map.createPane('electricPane');
