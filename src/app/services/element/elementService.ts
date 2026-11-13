@@ -1,5 +1,6 @@
 import { inject, Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { Observable, shareReplay } from 'rxjs';
 import { TipoElemento, RadioBase, Abonado, Oficina, Agente, Estado } from '../../models/gis';
 import { CoordService } from '../coord/coordService';
 import { GeocodingService } from '../gis/geocodingService';
@@ -27,14 +28,22 @@ export class ElementService {
 
   parroquiasDataSignal = signal<any>(null);
   get parroquiasData() { return this.parroquiasDataSignal(); }
+  private parroquiasReq$?: Observable<any>;
 
   constructor() {
     this.cargarDesdeCache();
     this.cargarParroquiasGeoJson();
   }
 
+  getParroquiasGeoJson$(): Observable<any> {
+    if (!this.parroquiasReq$) {
+      this.parroquiasReq$ = this.http.get('assets/geojson/parroquias.json').pipe(shareReplay(1));
+    }
+    return this.parroquiasReq$;
+  }
+
   private cargarParroquiasGeoJson() {
-    this.http.get('assets/geojson/parroquias.json').subscribe({
+    this.getParroquiasGeoJson$().subscribe({
       next: (data: any) => {
         this.parroquiasDataSignal.set(data);
         // Re-procesar datos si ya se habían cargado desde la caché

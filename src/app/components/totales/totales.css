@@ -85,6 +85,27 @@
   align-items: center;
   gap: 12px;
   padding: 5px 10px;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
+  transition: all 0.18s ease;
+}
+
+.stat-item.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.stat-item.clickable:hover {
+  background: #f8fafc;
+}
+
+.stat-item.active {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+
+.stat-item.dimmed {
+  opacity: 0.5;
 }
 
 /* Forzar círculo perfecto */

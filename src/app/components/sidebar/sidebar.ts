@@ -62,8 +62,7 @@ export class Sidebar {
   }
 
   salir() {
-    localStorage.removeItem('token_geo');
-    this.router.navigate(['/login']);
+    this.auth.logout();
   }
 
   toggle(capa: keyof CapasEstado) {

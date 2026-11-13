@@ -1,5 +1,6 @@
 import { Component, inject, computed, ChangeDetectionStrategy } from '@angular/core';
 import { GisService } from '../../services/gis/gisService';
+import { TipoElemento } from '../../models/gis';
 import { CommonModule } from '@angular/common';
 
 @Component({
@@ -35,11 +36,31 @@ export class Totales {
   totalAbonados = computed(() =>
     this.gis.abonadosSignal().reduce((acc, curr) => acc + (Number(curr.cantidad) || 0), 0),
   );
-  // Se muestra si la Capa 2 (Operaciones) o la Capa 1 (Regiones) están activas
+  // Se muestra si hay alguna capa territorial activa (Estados, Zonas Regionales o Demografía)
   visible = computed(() => {
     const capas = this.gis.capasVisibles();
-    return capas.operaciones || capas.regiones;
+    return capas.operaciones || capas.regiones || capas.poblacion;
   });
+
+  hayFiltroActivo = computed(() => {
+    const capas = this.gis.capasVisibles();
+    const lista = capas.operaciones ? capas.detalleOperaciones : capas.detalleRegiones;
+    return lista.length > 0;
+  });
+
+  esActivo(tipo: TipoElemento): boolean {
+    const capas = this.gis.capasVisibles();
+    const lista = capas.operaciones ? capas.detalleOperaciones : capas.detalleRegiones;
+    return lista.includes(tipo);
+  }
+
+  toggleElemento(tipo: TipoElemento) {
+    if (this.gis.capasVisibles().operaciones) {
+      this.gis.setDetalleOperaciones(tipo);
+    } else {
+      this.gis.setDetalleRegiones(tipo);
+    }
+  }
 
   formatear(valor: number): string {
     return new Intl.NumberFormat('de-DE').format(valor);

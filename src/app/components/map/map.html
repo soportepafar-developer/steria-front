@@ -2,63 +2,49 @@
   <div #mapContainer id="map" style="width: 100%; height: 100%;"></div>
   <app-totales></app-totales>
 
-  <!-- Leyenda: Estados activos (cuando Capa 2 / Operaciones está activa) -->
-  <div class="map-legend-overlay" [class.collapsed]="!leyendaAbierta()"
-    *ngIf="gis.capasVisibles().operaciones && gis.getEstadosConDatos().length > 0">
-    <div class="legend-header" (click)="leyendaAbierta.set(!leyendaAbierta())"
-      style="cursor: pointer; user-select: none;">
-      <div class="legend-title-wrapper">
-        <i class="fas fa-map-pin"></i>
-        <span>Estados Activos</span>
-      </div>
-      <button class="legend-toggle">
-        <i class="fas fa-chevron-down"></i>
-      </button>
-    </div>
-    <div class="legend-body">
-      <div class="legend-item-map" *ngFor="let est of gis.getEstadosConDatos()">
-        <span class="color-indicator" [style.backgroundColor]="est.color"></span>
-        <span class="region-label">{{ est.nombre }}</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Leyenda: Regiones activas (solo Capa 1, sin operaciones) -->
-  <div class="map-legend-overlay" [class.collapsed]="!leyendaAbierta()"
-    *ngIf="gis.capasVisibles().regiones && !gis.capasVisibles().operaciones">
+  <!-- Leyenda unificada: apila las secciones de las capas activas (Estados, Zonas Regionales, Demografía) -->
+  <div class="map-legend-overlay" [class.collapsed]="!leyendaAbierta()" *ngIf="hayLeyenda">
     <div class="legend-header" (click)="leyendaAbierta.set(!leyendaAbierta())"
       style="cursor: pointer; user-select: none;">
       <div class="legend-title-wrapper">
         <i class="fas fa-layer-group"></i>
-        <span>Regiones Activas</span>
+        <span>{{ tituloLeyenda }}</span>
       </div>
+      <span class="legend-view-badge" title="Nivel de detalle según el zoom">{{ nivelVista }}</span>
       <button class="legend-toggle">
         <i class="fas fa-chevron-down"></i>
       </button>
     </div>
-    <div class="legend-body">
-      <div class="legend-item-map" *ngFor="let region of gis.getRegionesConColores()">
-        <span class="color-indicator" [style.backgroundColor]="region.color"></span>
-        <span class="region-label">{{ region.nombre }}</span>
-      </div>
-    </div>
-  </div>
 
-  <!-- Leyenda: Población activa -->
-  <div class="map-legend-overlay" [class.collapsed]="!leyendaAbierta()" *ngIf="gis.capasVisibles().poblacion">
-    <div class="legend-header" (click)="leyendaAbierta.set(!leyendaAbierta())"
-      style="cursor: pointer; user-select: none;">
-      <div class="legend-title-wrapper">
-        <i class="fas fa-users"></i>
-        <span>Población (Hab.)</span>
+    <div class="legend-body">
+      <!-- Estados activos (capa División Política) -->
+      <div class="legend-section" *ngIf="gis.capasVisibles().operaciones && gis.getEstadosConDatos().length > 0">
+        <div class="legend-section-title">Estados Activos</div>
+        <div class="legend-item-map" *ngFor="let est of gis.getEstadosConDatos()">
+          <span class="color-indicator" [class.outline]="gis.capasVisibles().poblacion" [style.backgroundColor]="gis.capasVisibles().poblacion ? 'transparent' : est.color" [style.borderColor]="est.color"></span>
+          <span class="region-label">{{ est.nombre }}</span>
+        </div>
       </div>
-      <button class="legend-toggle">
-        <i class="fas fa-chevron-down"></i>
-      </button>
-    </div>
-    
+
+      <!-- Zonas Regionales -->
+      <div class="legend-section" *ngIf="gis.capasVisibles().regiones && !gis.capasVisibles().operaciones">
+        <div class="legend-section-title">
+          Zonas Regionales
+        </div>
+        <div class="legend-item-map" *ngFor="let region of gis.getRegionesConColores()">
+          <span class="color-indicator" [class.outline]="modoCombinado"
+            [style.backgroundColor]="modoCombinado ? 'transparent' : region.color"
+            [style.borderColor]="region.color"></span>
+          <span class="region-label">{{ region.nombre }}</span>
+        </div>
+      </div>
+
+      <!-- Demografía (antes Población) -->
+      <div class="legend-section" *ngIf="gis.capasVisibles().poblacion">
+        <div class="legend-section-title">Demografía (Hab.)</div>
+
     <!-- Escala por Estados (Zoom alejado) -->
-    <div class="legend-body" *ngIf="gis.zoomLevel() < 8.5">
+    <div class="legend-scale" *ngIf="gis.zoomLevel() < 8.5">
       <div class="legend-item-map">
         <span class="color-indicator" style="background-color: #1a2675;"></span>
         <span class="region-label">> 4,000,000</span>
@@ -90,7 +76,7 @@
     </div>
 
     <!-- Escala por Parroquias (Zoom acercado) -->
-    <div class="legend-body" *ngIf="gis.zoomLevel() >= 8.5">
+    <div class="legend-scale" *ngIf="gis.zoomLevel() >= 8.5">
       <div class="legend-item-map">
         <span class="color-indicator" style="background-color: #1a2675;"></span>
         <span class="region-label">> 100,000</span>
@@ -120,7 +106,10 @@
         <span class="region-label">&lt; 2,000</span>
       </div>
     </div>
+      </div>
+    </div>
   </div>
+
 
   <!-- Gestor de Proyectos Flotante (en el lado derecho) -->
   <app-project-manager *ngIf="gis.moduloPoligonosActivo()"></app-project-manager>
@@ -132,6 +121,9 @@
   <!-- Tooltip Flotante de Información al pasar el cursor (Hover) -->
   <div class="hover-info-tooltip" *ngIf="hoverInfo()" [style.left.px]="hoverInfo()!.x" [style.top.px]="hoverInfo()!.y">
     <div class="tooltip-title">{{ hoverInfo()!.nombre }}</div>
-    <div class="tooltip-sub" *ngIf="hoverInfo()!.sub">{{ hoverInfo()!.sub }}</div>
+    <div class="tooltip-sub" *ngIf="hoverInfo()!.sub">
+      <span class="tooltip-dot" *ngIf="hoverInfo()!.regionColor" [style.backgroundColor]="hoverInfo()!.regionColor"></span>{{ hoverInfo()!.sub }}
+    </div>
+    <div class="tooltip-sub tooltip-pob" *ngIf="hoverInfo()!.poblacion">Población: <strong>{{ hoverInfo()!.poblacion }}</strong></div>
   </div>
 </div>

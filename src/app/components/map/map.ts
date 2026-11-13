@@ -44,15 +44,59 @@ export class Map implements AfterViewInit {
   private projectShapesLayer = L.layerGroup();
   private pmEditDebounceTimer: any = null;
 
-  public hoverInfo = signal<{ nombre: string; sub: string; x: number; y: number } | null>(null);
+  public hoverInfo = signal<{
+    nombre: string;
+    sub: string;
+    x: number;
+    y: number;
+    regionColor?: string;
+    poblacion?: string;
+  } | null>(null);
 
-  mostrarHoverInfo(nombre: string, sub: string, containerPoint: L.Point) {
+  mostrarHoverInfo(
+    nombre: string,
+    sub: string,
+    containerPoint: L.Point,
+    extra?: { regionColor?: string; poblacion?: number },
+  ) {
     this.hoverInfo.set({
       nombre,
       sub,
       x: containerPoint.x + 15,
       y: containerPoint.y + 15,
+      regionColor: extra?.regionColor,
+      poblacion:
+        extra?.poblacion !== undefined ? Math.round(extra.poblacion).toLocaleString('es-VE') : undefined,
     });
+  }
+
+  /* Leyenda unificada */
+  get modoCombinado(): boolean {
+    const c = this.gis.capasVisibles();
+    return c.poblacion && c.regiones && !c.operaciones;
+  }
+
+  get hayLeyenda(): boolean {
+    const c = this.gis.capasVisibles();
+    return (
+      (c.operaciones && !c.poblacion && this.gis.getEstadosConDatos().length > 0) ||
+      (c.regiones && !c.operaciones) ||
+      c.poblacion
+    );
+  }
+
+  get tituloLeyenda(): string {
+    const c = this.gis.capasVisibles();
+    if (c.poblacion && (c.regiones || c.operaciones)) return 'Leyenda';
+    if (c.poblacion) return 'Demografía';
+    if (c.regiones) return 'Zonas Regionales';
+    return 'Estados Activos';
+  }
+
+  get nivelVista(): string {
+    const zoom = this.gis.zoomLevel();
+    if (zoom >= 11.5 && this.gis.capasVisibles().operaciones) return 'Vista: Elementos';
+    return zoom >= 8.5 ? 'Vista: Parroquias' : 'Vista: Estados';
   }
 
   ocultarHoverInfo() {
@@ -252,7 +296,7 @@ export class Map implements AfterViewInit {
         } else {
           this.renderStateTotals(estado.detalleOperaciones);
         }
-      } else if (estado.regiones) {
+      } else if (estado.regiones || estado.poblacion) {
         if (zoom >= 8.5) {
           this.renderParroquiaTotals(estado.detalleRegiones);
         } else {
@@ -321,6 +365,7 @@ export class Map implements AfterViewInit {
     });
 
     this.map = L.map(this.mapContainer.nativeElement, {
+      preferCanvas: true,
       center: [7.5, -66.1818],
       zoom: 6.3,
       zoomControl: false,
@@ -380,9 +425,12 @@ export class Map implements AfterViewInit {
     const procesarVenezuela = (data: any) => {
       this.geoJsonData = data;
       this.capaGeoJsonRegiones = L.geoJSON(data, {
+        style: (feature: any) => this.calcularEstiloEstado(feature),
         onEachFeature: (feature, layer) => {
           layer.on('mouseover', (e: any) => {
             const capas = this.gis.capasVisibles();
+            // En zoom >= 8.5 con Demografía, las parroquias manejan el hover; regiones solo dibuja el contorno
+            if (capas.poblacion && this.gis.zoomLevel() >= 8.5) return;
             if (capas.regiones || capas.operaciones || capas.poblacion) {
               (layer as L.Path).setStyle({
                 weight: 3,
@@ -393,10 +441,15 @@ export class Map implements AfterViewInit {
                 (layer as any).bringToFront();
               }
               const nombre = feature.properties.estado || feature.properties.name || '';
-              const regionText = feature.properties.region
-                ? `Región: ${feature.properties.region}`
-                : '';
-              this.mostrarHoverInfo(nombre, regionText, e.containerPoint);
+              const regionNombre = feature.properties.region || this.gis.obtenerRegion(nombre);
+              const regionText = regionNombre ? `Región: ${regionNombre}` : '';
+              const mostrarPob = capas.poblacion;
+              this.mostrarHoverInfo(nombre, regionText, e.containerPoint, {
+                regionColor: regionNombre
+                  ? this.gis.COLORES_REGIONES_SIGNAL()[regionNombre]
+                  : undefined,
+                poblacion: mostrarPob ? this.poblacionData[nombre] || 0 : undefined,
+              });
             }
           });
 
@@ -409,18 +462,16 @@ export class Map implements AfterViewInit {
           });
 
           layer.on('mouseout', () => {
+            const estado = this.gis.capasVisibles();
+            if (estado.poblacion && this.gis.zoomLevel() >= 8.5) return;
             if (this.capaGeoJsonRegiones) {
-              const estado = this.gis.capasVisibles();
-              if (estado.poblacion) {
-                this.aplicarEstiloPoblacion();
-              } else {
-                this.aplicarEstiloRegiones(estado.operaciones);
-              }
+              this.capaGeoJsonRegiones.resetStyle(layer as L.Path);
             }
             this.ocultarHoverInfo();
           });
 
           layer.on('click', (e) => {
+            if (this.gis.capasVisibles().poblacion && this.gis.zoomLevel() >= 8.5) return;
             if (this.gis.capasVisibles().poblacion) {
               const nombre = feature.properties.estado || feature.properties.name;
               const pob = this.poblacionData[nombre] || 0;
@@ -502,6 +553,7 @@ export class Map implements AfterViewInit {
       });
 
       this.capaGeoJsonParroquias = L.geoJSON(data, {
+        style: (feature: any) => this.calcularEstiloParroquia(feature),
         onEachFeature: (feature, layer) => {
           layer.on('mouseover', (e: any) => {
             if (this.gis.capasVisibles().poblacion && this.gis.zoomLevel() >= 8.5) {
@@ -516,7 +568,16 @@ export class Map implements AfterViewInit {
               const name = feature.properties.adm3_name || '';
               const municipio = feature.properties.adm2_name || '';
               const estado = feature.properties.adm1_name || '';
-              this.mostrarHoverInfo(name, `Municipio: ${municipio} - ${estado}`, e.containerPoint);
+              const area = feature.properties.area_sqkm || 0;
+              const totalArea = this.areaPorEstado[estado] || 1;
+              const pobParroquia = (area / totalArea) * (this.poblacionData[estado] || 0);
+              const regionNombre = this.gis.obtenerRegion(estado);
+              this.mostrarHoverInfo(name, `Municipio: ${municipio} - ${estado}`, e.containerPoint, {
+                regionColor: this.gis.capasVisibles().regiones
+                  ? this.gis.COLORES_REGIONES_SIGNAL()[regionNombre]
+                  : undefined,
+                poblacion: pobParroquia,
+              });
             }
           });
 
@@ -530,7 +591,7 @@ export class Map implements AfterViewInit {
 
           layer.on('mouseout', () => {
             if (this.capaGeoJsonParroquias) {
-              this.aplicarEstiloPoblacion();
+              this.capaGeoJsonParroquias.resetStyle(layer as L.Path);
             }
             this.ocultarHoverInfo();
           });
@@ -568,7 +629,7 @@ export class Map implements AfterViewInit {
     if (cachedParroquias) {
       procesarParroquias(cachedParroquias);
     } else {
-      this.http.get('assets/geojson/parroquias.json').subscribe({
+      this.gis.getParroquiasGeoJson$().subscribe({
         next: (data: any) => {
           procesarParroquias(data);
         },
@@ -729,32 +790,76 @@ export class Map implements AfterViewInit {
     }
   }
 
-  private aplicarEstiloRegiones(usarColorEstado: boolean) {
-    if (!this.capaGeoJsonRegiones) return;
-
-    const estadosConDatos = new Set(this.gis.getEstadosConDatos().map((e) => e.nombre));
-    const regionesActivas = this.gis.getRegionesConDatos();
+  private calcularEstiloEstado(f: any): L.PathOptions {
     const capas = this.gis.capasVisibles();
     const hayCapasEspeciales = capas.cotas || capas.electricidad || capas.vias;
+    const nombre = f?.properties?.estado || f?.properties?.name;
 
-    this.capaGeoJsonRegiones.setStyle((f: any) => {
-      const nombre = f.properties.estado || f.properties.name;
-      const region = this.gis.obtenerRegion(nombre);
-      const tieneDatos = usarColorEstado
-        ? estadosConDatos.has(nombre)
-        : regionesActivas.includes(region);
-      const color = usarColorEstado
-        ? this.gis.getColorEstado(nombre)
-        : this.gis.COLORES_REGIONES_SIGNAL()[region] || '#DEE2E6';
+    if (capas.poblacion) {
+      const combinadoRegiones = capas.regiones && !capas.operaciones;
+      const combinadoEstados = capas.operaciones;
+      const coloresRegiones = this.gis.COLORES_REGIONES_SIGNAL();
 
-      return {
-        fillColor: tieneDatos ? color : 'transparent',
-        weight: tieneDatos ? 1.5 : 0.5,
-        opacity: tieneDatos ? 1 : 0.3,
-        color: '#FFFFFF',
-        fillOpacity: tieneDatos ? (hayCapasEspeciales ? 0.3 : 0.7) : 0, // Más transparente si hay capas de info extra
-      };
-    });
+      if (this.gis.zoomLevel() >= 8.5) {
+        const colorContorno = combinadoEstados
+          ? this.gis.getColorEstado(nombre)
+          : coloresRegiones[this.gis.obtenerRegion(nombre)];
+        return {
+          fill: false,
+          fillOpacity: 0,
+          color: colorContorno || '#FFFFFF',
+          weight: 3,
+          opacity: 1,
+        };
+      }
+
+      const pob = this.poblacionData[nombre] || 0;
+      const estilo = { ...this.renderer.getEstiloPoblacion(pob, hayCapasEspeciales, false), fill: true };
+      if (combinadoRegiones) {
+        const colorRegion = coloresRegiones[this.gis.obtenerRegion(nombre)];
+        if (colorRegion) return { ...estilo, color: colorRegion, weight: 3.5, opacity: 1 };
+      } else if (combinadoEstados) {
+        const colorEstado = this.gis.getColorEstado(nombre);
+        if (colorEstado) return { ...estilo, color: colorEstado, weight: 3, opacity: 1 };
+      }
+      return estilo;
+    }
+
+    const usarColorEstado = capas.operaciones;
+    const estadosConDatos = new Set(this.gis.getEstadosConDatos().map((e) => e.nombre));
+    const regionesActivas = this.gis.getRegionesConDatos();
+    const region = this.gis.obtenerRegion(nombre);
+    const tieneDatos = usarColorEstado
+      ? estadosConDatos.has(nombre)
+      : regionesActivas.includes(region);
+    const color = usarColorEstado
+      ? this.gis.getColorEstado(nombre)
+      : this.gis.COLORES_REGIONES_SIGNAL()[region] || '#DEE2E6';
+
+    return {
+      fill: true,
+      fillColor: tieneDatos ? color : 'transparent',
+      weight: tieneDatos ? 1.5 : 0.5,
+      opacity: tieneDatos ? 1 : 0.3,
+      color: '#FFFFFF',
+      fillOpacity: tieneDatos ? (hayCapasEspeciales ? 0.3 : 0.7) : 0,
+    };
+  }
+
+  private calcularEstiloParroquia(f: any): L.PathOptions {
+    const capas = this.gis.capasVisibles();
+    const hayCapasEspeciales = capas.cotas || capas.electricidad || capas.vias;
+    const estado = f?.properties?.adm1_name;
+    const area = f?.properties?.area_sqkm || 0;
+    const totalArea = this.areaPorEstado[estado] || 1;
+    const pobEstado = this.poblacionData[estado] || 0;
+    const pob = (area / totalArea) * pobEstado;
+    return this.renderer.getEstiloPoblacion(pob, hayCapasEspeciales, true);
+  }
+
+  private aplicarEstiloRegiones(_usarColorEstado: boolean) {
+    if (!this.capaGeoJsonRegiones) return;
+    this.capaGeoJsonRegiones.setStyle((f: any) => this.calcularEstiloEstado(f));
   }
 
   private aplicarEstiloPoblacion() {
@@ -762,11 +867,12 @@ export class Map implements AfterViewInit {
     const mostrarPars = zoom >= 8.5;
     const capas = this.gis.capasVisibles();
     const hayCapasEspeciales = capas.cotas || capas.electricidad || capas.vias;
+    const combinadoRegiones = capas.regiones && !capas.operaciones;
+    const combinadoEstados = capas.operaciones;
+    const coloresRegiones = this.gis.COLORES_REGIONES_SIGNAL();
 
     if (mostrarPars && this.capaGeoJsonParroquias) {
-      if (this.capaGeoJsonRegiones) this.map.removeLayer(this.capaGeoJsonRegiones);
       this.capaGeoJsonParroquias.addTo(this.map);
-
       this.capaGeoJsonParroquias.setStyle((f: any) => {
         const estado = f.properties.adm1_name;
         const area = f.properties.area_sqkm || 0;
@@ -775,6 +881,29 @@ export class Map implements AfterViewInit {
         const pob = (area / totalArea) * pobEstado;
         return this.renderer.getEstiloPoblacion(pob, hayCapasEspeciales, true);
       });
+
+      // En modo combinado con zoom >= 8.5, dibujamos solo el contorno exterior de regiones/estados encima
+      if (this.capaGeoJsonRegiones) {
+        if (combinadoRegiones || combinadoEstados) {
+          this.capaGeoJsonRegiones.addTo(this.map);
+          this.capaGeoJsonRegiones.setStyle((f: any) => {
+            const nombre = f.properties.estado || f.properties.name;
+            const colorContorno = combinadoEstados
+              ? this.gis.getColorEstado(nombre)
+              : coloresRegiones[this.gis.obtenerRegion(nombre)];
+            return {
+              fill: false,
+              fillOpacity: 0,
+              color: colorContorno || '#FFFFFF',
+              weight: 3,
+              opacity: 1,
+            };
+          });
+          this.capaGeoJsonRegiones.bringToFront();
+        } else {
+          this.map.removeLayer(this.capaGeoJsonRegiones);
+        }
+      }
     } else {
       if (this.capaGeoJsonParroquias) this.map.removeLayer(this.capaGeoJsonParroquias);
       if (this.capaGeoJsonRegiones) this.capaGeoJsonRegiones.addTo(this.map);
@@ -783,7 +912,15 @@ export class Map implements AfterViewInit {
         this.capaGeoJsonRegiones.setStyle((f: any) => {
           const nombre = f.properties.estado || f.properties.name;
           const pob = this.poblacionData[nombre] || 0;
-          return this.renderer.getEstiloPoblacion(pob, hayCapasEspeciales, false);
+          const estilo = { ...this.renderer.getEstiloPoblacion(pob, hayCapasEspeciales, false), fill: true };
+          if (combinadoRegiones) {
+            const colorRegion = coloresRegiones[this.gis.obtenerRegion(nombre)];
+            if (colorRegion) return { ...estilo, color: colorRegion, weight: 3.5, opacity: 1 };
+          } else if (combinadoEstados) {
+            const colorEstado = this.gis.getColorEstado(nombre);
+            if (colorEstado) return { ...estilo, color: colorEstado, weight: 3, opacity: 1 };
+          }
+          return estilo;
         });
       }
     }

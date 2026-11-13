@@ -109,11 +109,14 @@ export class MapService {
 
       const activar = !e[nombre];
       const nuevo = { ...e, [nombre]: activar };
-      if (nombre === 'operaciones' && activar) { nuevo.regiones = false; nuevo.poblacion = false; nuevo.detalleRegiones = []; }
-      if (nombre === 'regiones' && activar) { nuevo.operaciones = false; nuevo.poblacion = false; nuevo.detalleOperaciones = []; }
-      if (nombre === 'poblacion' && activar) { nuevo.regiones = false; nuevo.operaciones = false; nuevo.detalleRegiones = []; nuevo.detalleOperaciones = []; }
-      if (nombre === 'operaciones' && !activar) nuevo.detalleOperaciones = [];
-      if (nombre === 'regiones' && !activar) nuevo.detalleRegiones = [];
+      // División Política (operaciones) se combina con Demografía, pero es excluyente con Zonas Regionales
+      if (nombre === 'operaciones' && activar) { nuevo.regiones = false; if (!nuevo.poblacion) nuevo.detalleRegiones = []; }
+      if (nombre === 'regiones' && activar) { nuevo.operaciones = false; nuevo.detalleOperaciones = []; }
+            if (nombre === 'operaciones' && !activar) nuevo.detalleOperaciones = [];
+      // Los totales (detalleRegiones) se comparten entre Regiones y Demografía: solo se limpian si ambas se apagan
+      if ((nombre === 'regiones' || nombre === 'poblacion') && !activar && !nuevo.regiones && !nuevo.poblacion) {
+        nuevo.detalleRegiones = [];
+      }
       return nuevo;
     });
   }
