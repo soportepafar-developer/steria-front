@@ -7,8 +7,48 @@
 }
 
 :host.collapsed {
-  width: var(--collapsed-width) !important;
-  min-width: var(--collapsed-width) !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  overflow: visible !important;
+}
+
+.floating-menu-btn {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 2100;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.12);
+  color: #3240A5;
+  font-size: 15px;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.floating-menu-btn:hover {
+  background: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(50, 64, 165, 0.18);
+}
+
+.floating-brand-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #4f46e5, #3240A5);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
 }
 
 .sidebar {
@@ -329,11 +369,15 @@
   transform: scale(1.15) rotate(90deg);
 }
 
-/* MODO COLAPSADO - Estilos estructurales */
+/* MODO COLAPSADO - Oculta el sidebar por completo y deja solo el botón flotante */
 .sidebar.collapsed {
-  width: var(--collapsed-width) !important;
-  min-width: var(--collapsed-width) !important;
-  padding: 5px 0 5px 0 !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden !important;
+  box-shadow: none !important;
 }
 
 .sidebar.collapsed .layer-item,
@@ -686,4 +730,34 @@
 
 .action-btn-delete:hover {
   background: #fee2e2;
+}
+
+/* Secciones desplegables del sidebar */
+.section-collapsible {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  padding-right: 6px;
+  transition: color 0.15s ease;
+}
+
+.section-collapsible:hover {
+  color: #3240A5;
+}
+
+.section-chevron {
+  font-size: 10px;
+  transition: transform 0.2s ease;
+}
+
+.section-chevron.rotated {
+  transform: rotate(-90deg);
+}
+
+.sidebar.collapsed .section-collapsible {
+  justify-content: center !important;
+  padding-right: 0 !important;
+  margin: 6px 0 4px 0 !important;
 }

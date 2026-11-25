@@ -8,6 +8,7 @@ export const routes: Routes = [
     { path: 'usuarios/nuevo', loadComponent: () => import('./components/add-user/add-user').then(m => m.AddUser), canActivate: [authGuard] },
     { path: 'usuarios/editar/:id', loadComponent: () => import('./components/add-user/add-user').then(m => m.AddUser), canActivate: [authGuard] },
     { path: 'historial', loadComponent: () => import('./components/historial/historial').then(m => m.Historial), canActivate: [authGuard] },
+    { path: 'configuracion', loadComponent: () => import('./components/configuracion/configuracion').then(m => m.Configuracion), canActivate: [authGuard] },
     { path: 'cambiar-contrasena', loadComponent: () => import('./components/change-password/change-password').then(m => m.ChangePassword), canActivate: [authGuard] },
     { path: '', redirectTo: 'login', pathMatch: 'full' },
     { path: '**', redirectTo: 'login' },

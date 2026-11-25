@@ -6,6 +6,7 @@ import { CapasEstado, TipoElemento } from '../../models/gis';
 import { NgSelectModule } from '@ng-select/ng-select';
 import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth/authService';
+import { ConfigService } from '../../services/config/configService';
 import { RouterModule } from '@angular/router';
 import { AddElementComponent } from '../add-element/add-element';
 import { SearchModal } from '../search-modal/search-modal';
@@ -29,12 +30,23 @@ import { SearchModal } from '../search-modal/search-modal';
 export class Sidebar {
   public gis = inject(GisService);
   public auth = inject(AuthService);
+  public config = inject(ConfigService);
   @ViewChild('selectTech') selectTech: any;
 
   mostrarForm = signal(false);
   mostrarSearchModal = signal(false);
   tipoEdicion: TipoElemento = 'ninguno';
   itemAEditar: any = null;
+
+  seccionesAbiertas = signal({
+    mapa: true,
+    referencia: true,
+    territorial: true,
+  });
+
+  toggleSeccion(seccion: 'mapa' | 'referencia' | 'territorial') {
+    this.seccionesAbiertas.update((s) => ({ ...s, [seccion]: !s[seccion] }));
+  }
 
   get esAdmin(): boolean {
     const rol = this.auth.getUserRol();
@@ -55,6 +67,17 @@ export class Sidebar {
 
   abrirBuscador() {
     this.mostrarSearchModal.set(true);
+  }
+
+  togglePoligonos() {
+    if (this.router.url !== '/mapa') {
+      if (!this.gis.moduloPoligonosActivo()) {
+        this.gis.toggleModuloPoligonos();
+      }
+      this.router.navigate(['/mapa']);
+      return;
+    }
+    this.gis.toggleModuloPoligonos();
   }
 
   onEditFromSearch(item: any) {

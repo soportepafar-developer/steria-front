@@ -18,6 +18,9 @@ import { Totales } from '../totales/totales';
 import { ElementRendererService } from '../../services/element/elementRendererService';
 import { ElementService } from '../../services/element/elementService';
 import { GisMathService } from '../../services/gis/gisMathService';
+import { ConfigService } from '../../services/config/configService';
+import { MapAnalysisService } from '../../services/map/mapAnalysisService';
+import { MapMarkerService } from '../../services/map/mapMarkerService';
 import { Polygons } from '../polygons/polygons';
 import { ProjectManager } from '../project-manager/project-manager';
 import '@geoman-io/leaflet-geoman-free';
@@ -37,6 +40,9 @@ export class Map implements AfterViewInit {
   private mathService = inject(GisMathService);
   private elementService = inject(ElementService);
   public proyectoService = inject(ProyectoService);
+  public configService = inject(ConfigService);
+  private analysisService = inject(MapAnalysisService);
+  private markerService = inject(MapMarkerService);
 
   public leyendaAbierta = signal(true);
   public analisisFigura = signal<any | null>(null);
@@ -240,7 +246,8 @@ export class Map implements AfterViewInit {
         }
 
         const zoom = this.gis.zoomLevel();
-        const esVistaSatelite = zoom >= 14;
+        const { zoomSatelite } = this.configService.configSignal().mapa;
+        const esVistaSatelite = zoom >= zoomSatelite;
 
         if (esVistaSatelite) {
           this.capaSatelite.addTo(this.map);
@@ -289,19 +296,29 @@ export class Map implements AfterViewInit {
         // Mostrar solo los elementos dentro de TODOS los polígonos del proyecto
         this.renderIndividualMarkers(['antenas', 'oficinas', 'agentes']);
       } else if (estado.operaciones) {
-        if (zoom >= 11.5) {
+        const { zoomPines, zoomParroquias } = this.configService.configSignal().mapa;
+        if (zoom >= zoomPines) {
           this.renderIndividualMarkers(estado.detalleOperaciones);
-        } else if (zoom >= 8.5) {
+        } else if (zoom >= zoomParroquias) {
           this.renderParroquiaTotals(estado.detalleOperaciones);
         } else {
           this.renderStateTotals(estado.detalleOperaciones);
         }
       } else if (estado.regiones || estado.poblacion) {
-        if (zoom >= 8.5) {
+        const { zoomParroquias } = this.configService.configSignal().mapa;
+        if (zoom >= zoomParroquias) {
           this.renderParroquiaTotals(estado.detalleRegiones);
         } else {
           this.renderRegionTotals(estado.detalleRegiones);
         }
+      }
+    });
+
+    // Reajustar tamaño del mapa Leaflet cuando el sidebar se oculta o se expande
+    effect(() => {
+      this.gis.sidebarColapsado();
+      if (this.map) {
+        setTimeout(() => this.map?.invalidateSize(), 320);
       }
     });
 
@@ -441,7 +458,7 @@ export class Map implements AfterViewInit {
                 (layer as any).bringToFront();
               }
               const nombre = feature.properties.estado || feature.properties.name || '';
-              const regionNombre = feature.properties.region || this.gis.obtenerRegion(nombre);
+              const regionNombre = this.gis.obtenerRegion(nombre) || '';
               const regionText = regionNombre ? `Región: ${regionNombre}` : '';
               const mostrarPob = capas.poblacion;
               this.mostrarHoverInfo(nombre, regionText, e.containerPoint, {
@@ -927,402 +944,36 @@ export class Map implements AfterViewInit {
   }
 
   private renderParroquiaTotals(tipos: TipoElemento[]) {
-    const renderedPoints: L.Point[] = [];
-    const minDistance = 35; // Distancia mínima para evitar solapamientos entre parroquias cercanas
-    const renderedKeys = new Set<string>();
-
-    if (!this.parroquiasGeoJsonData) return;
-
-    this.parroquiasGeoJsonData.features.forEach((f: any) => {
-      const pName = f.properties.adm3_name;
-      const estado = f.properties.adm1_name;
-      const uniqueKey = `${pName}_${estado}`;
-
-      if (renderedKeys.has(uniqueKey)) return;
-      renderedKeys.add(uniqueKey);
-
-      const centro = this.parroquiaCentros[uniqueKey];
-      if (!centro) return;
-
-      const items = tipos
-        .map((t) => ({
-          tipo: t,
-          total: this.gis.getTotalesPorParroquia(t).get(uniqueKey) || 0,
-        }))
-        .filter((i) => i.total > 0);
-
-      if (items.length > 0) {
-        const segBreakdown = tipos.includes('abonados')
-          ? this.gis
-              .abonadosSignal()
-              .filter((ab) => ab.parroquia === pName && ab.estado === estado)
-              .reduce((acc: any, ab) => {
-                acc[ab.segmentacion] = (acc[ab.segmentacion] || 0) + (Number(ab.cantidad) || 0);
-                return acc;
-              }, {})
-          : null;
-
-        const agenteBreakdown = tipos.includes('agentes')
-          ? this.gis
-              .agentesSignal()
-              .filter((ag) => ag.parroquia === pName && ag.estado === estado)
-              .reduce((acc: any, ag) => {
-                acc[ag.clasificacion || 'AA'] =
-                  (acc[ag.clasificacion || 'AA'] || 0) + (Number(ag.cantidad) || 1);
-                return acc;
-              }, {})
-          : null;
-
-        const originalPoint = this.map.latLngToLayerPoint(centro);
-        let adjustedPoint = originalPoint;
-        let attempts = 0;
-        let angle = 0;
-        let radius = 0;
-        let collision = true;
-
-        while (collision && attempts < 10) {
-          collision = renderedPoints.some((p) => p.distanceTo(adjustedPoint) < minDistance);
-          if (collision) {
-            attempts++;
-            angle += 1.1;
-            radius = 10 + attempts * 3;
-            adjustedPoint = L.point(
-              originalPoint.x + radius * Math.cos(angle),
-              originalPoint.y + radius * Math.sin(angle),
-            );
-          }
-        }
-
-        renderedPoints.push(adjustedPoint);
-        const finalLatLng = this.map.layerPointToLatLng(adjustedPoint);
-
-        L.marker(finalLatLng, {
-          icon: this.renderer.crearBadgeGroupIcon(items, 'parroquia'),
-          zIndexOffset: 1500 + attempts,
-          pane: 'elementsPane',
-        })
-          .bindPopup(
-            this.renderer.crearPopupAgregado(
-              `${pName} (${estado})`,
-              'estado',
-              items,
-              segBreakdown,
-              agenteBreakdown,
-            ),
-          )
-          .addTo(this.layerAggregated);
-      }
-    });
+    this.markerService.renderParroquiaTotals(
+      tipos,
+      this.parroquiasGeoJsonData,
+      this.parroquiaCentros,
+      this.map,
+      this.layerAggregated,
+    );
   }
 
   private renderIndividualMarkers(tipos: TipoElemento[]) {
-    const analisis = this.analisisFigura();
-    const isFiltered = !!analisis && (analisis.tipo === 'poligono' || analisis.tipo === 'circulo' || analisis.tipo === 'ruta');
-
-    if (tipos.includes('antenas')) {
-      const icon = this.renderer.crearPinIcon('antenas');
-      const termino = this.gis.busquedaAntena().toLowerCase();
-      
-      const proyFiltros = this.proyectoElementosFiltrados();
-      const dataSource = (isFiltered && analisis.elementos) 
-        ? analisis.elementos.radioBases 
-        : (proyFiltros ? proyFiltros.radioBases : this.gis.radioBasesSignal());
-      
-      dataSource
-        .filter(
-          (a: any) =>
-            !termino ||
-            a.nombre?.toLowerCase().includes(termino) ||
-            a.direccion?.toLowerCase().includes(termino),
-        )
-        .forEach((a: any) => {
-          if (a.latitud && a.longitud) {
-            L.marker([a.latitud, a.longitud], { icon, pane: 'elementsPane' })
-              .bindPopup(
-                () =>
-                  this.renderer.crearPopupDetalle('antenas', [
-                    { label: 'Nombre', value: a.nombre },
-                    { label: 'Ubicación', value: `${a.estado} (${a.region})` },
-                    { label: 'Tecnología', value: a.tecnologia },
-                    {
-                      label: 'Actividad',
-                      value: a.actividad,
-                      badge: true,
-                      badgeColor: this.renderer.getColorActividad(a.actividad),
-                    },
-                    { label: 'Dirección', value: a.direccion },
-                    {
-                      label: 'Coordenadas',
-                      value: this.renderer.formatCoords(a.latitud, a.longitud),
-                      coords: true,
-                    },
-                  ]),
-                { maxWidth: 400 },
-              )
-              .addTo(this.radioBases);
-          }
-        });
-      this.radioBases.addTo(this.map);
-    }
-
-    if (tipos.includes('oficinas')) {
-      const icon = this.renderer.crearPinIcon('oficinas');
-      
-      const proyFiltros = this.proyectoElementosFiltrados();
-      const dataSource = (isFiltered && analisis.elementos) 
-        ? analisis.elementos.oficinas 
-        : (proyFiltros ? proyFiltros.oficinas : this.gis.oficinasSignal());
-      dataSource.forEach((o: any) => {
-        if (o.latitud && o.longitud) {
-          L.marker([o.latitud, o.longitud], { icon, pane: 'elementsPane' })
-            .bindPopup(
-              () =>
-                this.renderer.crearPopupDetalle('oficinas', [
-                  { label: 'Nombre', value: o.nombre },
-                  { label: 'Ubicación', value: `${o.estado} (${o.region})` },
-                  { label: 'Dirección', value: o.direccion },
-                  {
-                    label: 'Coordenadas',
-                    value: this.renderer.formatCoords(o.latitud, o.longitud),
-                    coords: true,
-                  },
-                ]),
-              { maxWidth: 400 },
-            )
-            .addTo(this.oficinas);
-        }
-      });
-      this.oficinas.addTo(this.map);
-    }
-
-    if (tipos.includes('agentes')) {
-      const icon = this.renderer.crearPinIcon('agentes');
-      
-      const proyFiltros = this.proyectoElementosFiltrados();
-      const dataSource = (isFiltered && analisis.elementos) 
-        ? analisis.elementos.agentes 
-        : (proyFiltros ? proyFiltros.agentes : this.gis.agentesSignal());
-      dataSource.forEach((ag: any) => {
-        if (ag.latitud && ag.longitud) {
-          L.marker([ag.latitud, ag.longitud], { icon, pane: 'elementsPane' })
-            .bindPopup(
-              () =>
-                this.renderer.crearPopupDetalle('agentes', [
-                  { label: 'Nombre', value: ag.nombre },
-                  { label: 'Ubicación', value: `${ag.estado} (${ag.region})` },
-                  { label: 'Cód. Dealer', value: ag.codigoDealer },
-                  { label: 'Clasificación', value: ag.clasificacion, badge: true },
-                  { label: 'Dirección', value: ag.direccion },
-                  {
-                    label: 'Coordenadas',
-                    value: this.renderer.formatCoords(ag.latitud, ag.longitud),
-                    coords: true,
-                  },
-                ]),
-              { maxWidth: 400 },
-            )
-            .addTo(this.agentes);
-        }
-      });
-      this.agentes.addTo(this.map);
-    }
-
-    if (tipos.includes('abonados')) {
-      const icon = this.renderer.crearPinIcon('abonados');
-      const grupos: Record<string, any> = {};
-      const dataSource = isFiltered && analisis.elementos ? analisis.elementos.abonados : this.gis.abonadosSignal();
-      dataSource.forEach((ab: any) => {
-        const key = `${Number(ab.latitud).toFixed(5)}_${Number(ab.longitud).toFixed(5)}`;
-        if (!grupos[key])
-          grupos[key] = { ...ab, nombre: ab.nombre.replace(/ 3G| 4G| 5G/gi, ''), segs: {} };
-        grupos[key].segs[ab.segmentacion] =
-          (grupos[key].segs[ab.segmentacion] || 0) + (Number(ab.cantidad) || 0);
-      });
-
-      Object.values(grupos).forEach((g) => {
-        if (g.latitud && g.longitud) {
-          L.marker([g.latitud, g.longitud], { icon, pane: 'elementsPane' })
-            .bindPopup(
-              () => {
-                const total = Object.values(g.segs).reduce((a: any, b: any) => a + b, 0) as number;
-                const rows: any[] = [
-                  { label: 'Nombre', value: g.nombre },
-                  { label: 'Ubicación', value: `${g.estado} (${g.region})` },
-                ];
-                if (Object.keys(g.segs).length > 1) {
-                  rows.push(
-                    { label: 'Desglose', breakdown: g.segs },
-                    { label: 'Total General', value: total.toLocaleString(), badge: true },
-                  );
-                } else {
-                  const [s, c] = Object.entries(g.segs)[0];
-                  rows.push(
-                    { label: 'Segmentación', value: s, badge: true },
-                    { label: 'Cantidad', value: (c as number).toLocaleString() },
-                  );
-                }
-                if (g.direccion) rows.push({ label: 'Dirección', value: g.direccion });
-                rows.push({
-                  label: 'Coordenadas',
-                  value: this.renderer.formatCoords(g.latitud, g.longitud),
-                  coords: true,
-                });
-                return this.renderer.crearPopupDetalle('abonados', rows);
-              },
-              { maxWidth: 400 },
-            )
-            .addTo(this.abonados);
-        }
-      });
-      this.abonados.addTo(this.map);
-    }
+    this.markerService.renderIndividualMarkers(tipos, {
+      map: this.map,
+      layerAggregated: this.layerAggregated,
+      groups: {
+        radioBases: this.radioBases,
+        oficinas: this.oficinas,
+        agentes: this.agentes,
+        abonados: this.abonados,
+      },
+      analisisFigura: this.analisisFigura(),
+      proyectoElementosFiltrados: this.proyectoElementosFiltrados(),
+    });
   }
 
   private renderStateTotals(tipos: TipoElemento[]) {
-    const renderedPoints: L.Point[] = [];
-    const minDistance = 45; // Distancia mínima en píxeles para evitar solapamiento
-
-    this.gis.estadosSignal().forEach((est) => {
-      const items = tipos
-        .map((t) => ({ tipo: t, total: this.gis.getTotalesPorEstado(t).get(est.nombre) || 0 }))
-        .filter((i) => i.total > 0);
-      if (items.length > 0) {
-        const segBreakdown = tipos.includes('abonados')
-          ? this.gis
-              .abonadosSignal()
-              .filter((ab) => ab.estado === est.nombre)
-              .reduce((acc: any, ab) => {
-                acc[ab.segmentacion] = (acc[ab.segmentacion] || 0) + (Number(ab.cantidad) || 0);
-                return acc;
-              }, {})
-          : null;
-
-        const agenteBreakdown = tipos.includes('agentes')
-          ? this.gis
-              .agentesSignal()
-              .filter((ag) => ag.estado === est.nombre)
-              .reduce((acc: any, ag) => {
-                acc[ag.clasificacion || 'AA'] =
-                  (acc[ag.clasificacion || 'AA'] || 0) + (Number(ag.cantidad) || 1);
-                return acc;
-              }, {})
-          : null;
-
-        // --- LÓGICA DE EVITACIÓN DE COLISIONES ---
-        const originalPoint = this.map.latLngToLayerPoint([est.latitud, est.longitud]);
-        let adjustedPoint = originalPoint;
-        let attempts = 0;
-        let angle = 0;
-        let radius = 0;
-        let collision = true;
-
-        while (collision && attempts < 15) {
-          collision = renderedPoints.some((p) => p.distanceTo(adjustedPoint) < minDistance);
-          if (collision) {
-            attempts++;
-            angle += 1.1; // Ángulo de la espiral
-            radius = 12 + attempts * 3;
-            adjustedPoint = L.point(
-              originalPoint.x + radius * Math.cos(angle),
-              originalPoint.y + radius * Math.sin(angle),
-            );
-          }
-        }
-
-        renderedPoints.push(adjustedPoint);
-        const finalLatLng = this.map.layerPointToLatLng(adjustedPoint);
-
-        L.marker(finalLatLng, {
-          icon: this.renderer.crearBadgeGroupIcon(items, 'estado'),
-          zIndexOffset: 1000 + attempts,
-          pane: 'elementsPane',
-        })
-          .bindPopup(
-            this.renderer.crearPopupAgregado(
-              est.nombre,
-              'estado',
-              items,
-              segBreakdown,
-              agenteBreakdown,
-            ),
-          )
-          .addTo(this.layerAggregated);
-      }
-    });
+    this.markerService.renderStateTotals(tipos, this.map, this.layerAggregated);
   }
 
   private renderRegionTotals(tipos: TipoElemento[]) {
-    const renderedPoints: L.Point[] = [];
-    const minDistance = 50;
-
-    this.gis.regionesSignal().forEach((reg) => {
-      const items = tipos
-        .map((t) => ({ tipo: t, total: this.gis.getTotalesPorRegion(t).get(reg.nombre) || 0 }))
-        .filter((i) => i.total > 0);
-      const centro = this.gis.getCentroRegion(reg.nombre);
-      if (items.length > 0 && centro) {
-        const segBreakdown = tipos.includes('abonados')
-          ? this.gis
-              .abonadosSignal()
-              .filter((ab) => ab.region === reg.nombre)
-              .reduce((acc: any, ab) => {
-                acc[ab.segmentacion] = (acc[ab.segmentacion] || 0) + (Number(ab.cantidad) || 0);
-                return acc;
-              }, {})
-          : null;
-
-        const agenteBreakdown = tipos.includes('agentes')
-          ? this.gis
-              .agentesSignal()
-              .filter((ag) => ag.region === reg.nombre)
-              .reduce((acc: any, ag) => {
-                acc[ag.clasificacion || 'AA'] =
-                  (acc[ag.clasificacion || 'AA'] || 0) + (Number(ag.cantidad) || 1);
-                return acc;
-              }, {})
-          : null;
-
-        // --- LÓGICA DE EVITACIÓN DE COLISIONES ---
-        const originalPoint = this.map.latLngToLayerPoint([centro.lat, centro.lng]);
-        let adjustedPoint = originalPoint;
-        let attempts = 0;
-        let angle = 0;
-        let radius = 0;
-        let collision = true;
-
-        while (collision && attempts < 15) {
-          collision = renderedPoints.some((p) => p.distanceTo(adjustedPoint) < minDistance);
-          if (collision) {
-            attempts++;
-            angle += 1.1;
-            radius = 15 + attempts * 4;
-            adjustedPoint = L.point(
-              originalPoint.x + radius * Math.cos(angle),
-              originalPoint.y + radius * Math.sin(angle),
-            );
-          }
-        }
-
-        renderedPoints.push(adjustedPoint);
-        const finalLatLng = this.map.layerPointToLatLng(adjustedPoint);
-
-        L.marker(finalLatLng, {
-          icon: this.renderer.crearBadgeGroupIcon(items, 'region'),
-          zIndexOffset: 2000 + attempts,
-          pane: 'elementsPane',
-        })
-          .bindPopup(
-            this.renderer.crearPopupAgregado(
-              reg.nombre,
-              'region',
-              items,
-              segBreakdown,
-              agenteBreakdown,
-            ),
-          )
-          .addTo(this.layerAggregated);
-      }
-    });
+    this.markerService.renderRegionTotals(tipos, this.map, this.layerAggregated);
   }
 
   private cargarCapaElectricidad() {
@@ -1416,379 +1067,13 @@ export class Map implements AfterViewInit {
     }
   }
 
-  private obtenerParroquiaPorCoordenada(
-    lat: number,
-    lng: number,
-  ): { name: string; municipio: string; estado: string } | null {
-    if (!this.parroquiasGeoJsonData) return null;
-    for (const feature of this.parroquiasGeoJsonData.features) {
-      const geom = feature.geometry;
-      if (!geom) continue;
-
-      const type = geom.type;
-      const coords = geom.coordinates;
-      const name = feature.properties.adm3_name;
-      const municipio = feature.properties.adm2_name;
-      const estado = feature.properties.adm1_name;
-
-      const puntoEnGeoJsonPoligono = (ring: number[][]) => {
-        const polyVertices = ring.map((p) => L.latLng(p[1], p[0]));
-        return this.mathService.puntoEnPoligono(lat, lng, polyVertices);
-      };
-
-      try {
-        if (type === 'Polygon') {
-          if (puntoEnGeoJsonPoligono(coords[0])) return { name, municipio, estado };
-        } else if (type === 'MultiPolygon') {
-          for (const poly of coords) {
-            if (puntoEnGeoJsonPoligono(poly[0])) return { name, municipio, estado };
-          }
-        }
-      } catch (e) {}
-    }
-    return null;
-  }
-
-  private obtenerParroquiasIntersectadas(
-    layer: any,
-    tipo: string,
-    centro: L.LatLng | null,
-    radio: number,
-  ): { name: string; municipio: string; estado: string }[] {
-    const keySet = new Set<string>();
-    const parroquias: { name: string; municipio: string; estado: string }[] = [];
-
-    const addPar = (par: { name: string; municipio: string; estado: string } | null) => {
-      if (!par) return;
-      const key = `${par.name}_${par.estado}`;
-      if (!keySet.has(key)) {
-        keySet.add(key);
-        parroquias.push(par);
-      }
-    };
-
-    if (centro) {
-      addPar(this.obtenerParroquiaPorCoordenada(centro.lat, centro.lng));
-    }
-
-    if (typeof layer.getBounds !== 'function') return parroquias;
-    const bounds = layer.getBounds();
-    if (!bounds || !bounds.isValid()) return parroquias;
-
-    const latStep = (bounds.getNorth() - bounds.getSouth()) / 4;
-    const lngStep = (bounds.getEast() - bounds.getWest()) / 4;
-
-    for (let i = 0; i <= 4; i++) {
-      for (let j = 0; j <= 4; j++) {
-        const lat = bounds.getSouth() + i * latStep;
-        const lng = bounds.getWest() + j * lngStep;
-
-        let pointInside = false;
-        if (tipo === 'circulo' && centro) {
-          pointInside = this.mathService.puntoEnCirculo(lat, lng, centro, radio);
-        } else if (tipo === 'poligono') {
-          const latlngs = layer.getLatLngs();
-          const vertices = (Array.isArray(latlngs[0]) ? latlngs[0] : latlngs) as L.LatLng[];
-          pointInside = this.mathService.puntoEnPoligono(lat, lng, vertices);
-        } else if (tipo === 'ruta') {
-          const vertices = layer.getLatLngs() as L.LatLng[];
-          pointInside = this.mathService.puntoCercaDeRuta(lat, lng, vertices, 500);
-        }
-
-        if (pointInside) {
-          addPar(this.obtenerParroquiaPorCoordenada(lat, lng));
-        }
-      }
-    }
-
-    return parroquias;
-  }
-
-  /**
-   * Verifica si un punto (lat, lng) pertenece a alguna otra figura previamente guardada en el proyecto activo.
-   * Útil para evitar duplicidad de conteo cuando los polígonos se superponen.
-   */
-  private elementoEnOtrasFiguras(lat: number, lng: number, layerActual: L.Layer): boolean {
-    const figuras = this.proyectoService.figurasProyectoActivo();
-    const idActual = (layerActual as any).dbFigura?.id;
-    
-    // Ignoramos la figura actual (si ya está guardada)
-    const otrasFiguras = figuras.filter(f => f.id !== idActual);
-
-    for (const f of otrasFiguras) {
-      if (!f.coordenadas) continue;
-      let coords: any;
-      try {
-        coords = typeof f.coordenadas === 'string' ? JSON.parse(f.coordenadas) : f.coordenadas;
-      } catch (e) {
-        continue;
-      }
-
-      if (f.tipo === 'circulo' && f.radio) {
-        const centro = coords;
-        if (centro) {
-          const cLat = centro.lat !== undefined ? centro.lat : Array.isArray(centro) ? centro[0] : undefined;
-          const cLng = centro.lng !== undefined ? centro.lng : Array.isArray(centro) ? centro[1] : undefined;
-          if (cLat !== undefined && cLng !== undefined) {
-            if (this.mathService.puntoEnCirculo(lat, lng, L.latLng(cLat, cLng), f.radio)) return true;
-          }
-        }
-      } else if (f.tipo === 'poligono') {
-        const verticesRaw = Array.isArray(coords[0]) && Array.isArray(coords[0][0]) ? coords[0] : coords;
-        if (Array.isArray(verticesRaw)) {
-          const vertices = verticesRaw.map((v: any) => L.latLng(v.lat !== undefined ? v.lat : v[0], v.lng !== undefined ? v.lng : v[1]));
-          if (this.mathService.puntoEnPoligono(lat, lng, vertices)) return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Procesa la figura dibujada para calcular métricas físicas y evaluar elementos internos/cercanos.
-   */
   private procesarFigura(layer: L.Layer, esNueva: boolean = true) {
-    let tipo: 'poligono' | 'ruta' | 'circulo' = 'poligono';
-    let vertices: L.LatLng[] = [];
-    let area = 0;
-    let perimetro = 0;
-    let longitud = 0;
-    let rumbo = 0;
-    let cardinal = '';
-    let centroCirculo: L.LatLng | null = null;
-    let radioCirculo = 0;
-
-    if (layer instanceof L.Circle) {
-      tipo = 'circulo';
-      centroCirculo = layer.getLatLng();
-      radioCirculo = layer.getRadius();
-      area = Math.PI * Math.pow(radioCirculo, 2);
-      perimetro = 2 * Math.PI * radioCirculo;
-    } else if (layer instanceof L.Polygon) {
-      tipo = 'poligono';
-      const latlngs = layer.getLatLngs();
-      vertices = (Array.isArray(latlngs[0]) ? latlngs[0] : latlngs) as L.LatLng[];
-      area = this.mathService.calcularAreaPoligono(vertices);
-      perimetro = this.mathService.calcularPerimetroPoligono(vertices);
-    } else if (layer instanceof L.Polyline) {
-      tipo = 'ruta';
-      vertices = layer.getLatLngs() as L.LatLng[];
-      longitud = this.mathService.calcularLongitudRuta(vertices);
-      if (vertices.length >= 2) {
-        rumbo = this.mathService.calcularRumboInicial(vertices[0], vertices[vertices.length - 1]);
-        cardinal = this.mathService.obtenerDireccionCardinal(rumbo);
-      }
-    }
-
-    // Filtrar elementos (Radiobases, Agentes, Oficinas)
-    let radioBases: any[] = [];
-    let agentes: any[] = [];
-    let oficinas: any[] = [];
-
-    let centroide: L.LatLng | null = null;
-    if (tipo === 'circulo' && centroCirculo) {
-      centroide = centroCirculo;
-    } else if (vertices.length > 0) {
-      const latSum = vertices.reduce((sum, v) => sum + v.lat, 0);
-      const lngSum = vertices.reduce((sum, v) => sum + v.lng, 0);
-      centroide = L.latLng(latSum / vertices.length, lngSum / vertices.length);
-    }
-
-    const parroquiasFigura = this.obtenerParroquiasIntersectadas(
+    const resultado = this.analysisService.analizarFigura(
       layer,
-      tipo,
-      centroide,
-      radioCirculo,
-    );
-    const estadosFigura = Array.from(new Set(parroquiasFigura.map((p) => p.estado)));
-
-    let bounds: L.LatLngBounds | null = null;
-    if (typeof (layer as any).getBounds === 'function') {
-      bounds = (layer as any).getBounds();
-    }
-
-    if (tipo === 'circulo' && centroCirculo) {
-      radioBases = this.gis
-        .radioBasesSignal()
-        .filter((rb) =>
-          (!bounds || bounds.contains([rb.latitud, rb.longitud])) &&
-          this.mathService.puntoEnCirculo(rb.latitud, rb.longitud, centroCirculo!, radioCirculo) &&
-          !this.elementoEnOtrasFiguras(rb.latitud, rb.longitud, layer)
-        );
-      agentes = this.gis
-        .agentesSignal()
-        .filter((ag) =>
-          (!bounds || bounds.contains([ag.latitud, ag.longitud])) &&
-          this.mathService.puntoEnCirculo(ag.latitud, ag.longitud, centroCirculo!, radioCirculo) &&
-          !this.elementoEnOtrasFiguras(ag.latitud, ag.longitud, layer)
-        );
-      oficinas = this.gis
-        .oficinasSignal()
-        .filter((of) =>
-          (!bounds || bounds.contains([of.latitud, of.longitud])) &&
-          this.mathService.puntoEnCirculo(of.latitud, of.longitud, centroCirculo!, radioCirculo) &&
-          !this.elementoEnOtrasFiguras(of.latitud, of.longitud, layer)
-        );
-    } else if (tipo === 'poligono') {
-      // Usamos el backend para buscar con ST_Contains en MySQL, súper rápido!
-      const wkt = this.mathService.figurasToWKT([{tipo: 'poligono', layer}]);
-      if (wkt) {
-        this.elementService.filtrarPorPoligonos(wkt).subscribe((elementos: any[]) => {
-          const radioBasesSync = elementos.filter((e: any) => e.tipo === 'antenas' && !this.elementoEnOtrasFiguras(e.latitud, e.longitud, layer));
-          const agentesSync = elementos.filter((e: any) => e.tipo === 'agentes' && !this.elementoEnOtrasFiguras(e.latitud, e.longitud, layer));
-          const oficinasSync = elementos.filter((e: any) => e.tipo === 'oficinas' && !this.elementoEnOtrasFiguras(e.latitud, e.longitud, layer));
-          
-          this.analisisFigura.update((a: any) => {
-            if (a) {
-              a.elementos = { radioBases: radioBasesSync, agentes: agentesSync, oficinas: oficinasSync };
-            }
-            return a ? { ...a } : a;
-          });
-        });
-      }
-    } else {
-      const bufferMetros = 500;
-      radioBases = this.gis
-        .radioBasesSignal()
-        .filter((rb) =>
-          this.mathService.puntoCercaDeRuta(rb.latitud, rb.longitud, vertices, bufferMetros),
-        );
-      agentes = this.gis
-        .agentesSignal()
-        .filter((ag) =>
-          this.mathService.puntoCercaDeRuta(ag.latitud, ag.longitud, vertices, bufferMetros),
-        );
-      oficinas = this.gis
-        .oficinasSignal()
-        .filter((of) =>
-          this.mathService.puntoCercaDeRuta(of.latitud, of.longitud, vertices, bufferMetros),
-        );
-    }
-
-    // Calcular el total de abonados a nivel de estado(s) intersectado(s)
-    const totalAbonados = this.gis
-      .abonadosSignal()
-      .filter((ab) => estadosFigura.includes(ab.estado))
-      .reduce((acc, curr) => acc + (Number(curr.cantidad) || 0), 0);
-
-    const recomendaciones = this.calcularRecomendacionesAnalisis(
-      radioBases.length,
-      agentes.length,
-      oficinas.length,
-      totalAbonados,
-      tipo,
-      parroquiasFigura,
-    );
-
-    this.analisisFigura.set({
-      tipo,
-      coordenadas: tipo === 'circulo' ? centroCirculo : vertices,
-      radio: tipo === 'circulo' ? radioCirculo : null,
       esNueva,
-      nombreExistente: (layer as any).dbFigura?.nombre || '',
-      mediciones: {
-        area,
-        perimetro,
-        longitud,
-        rumbo,
-        cardinal,
-      },
-      conteos: {
-        radioBases: radioBases.length,
-        agentes: agentes.length,
-        oficinas: oficinas.length,
-        abonados: totalAbonados,
-      },
-      elementos: { 
-        radioBases, 
-        agentes, 
-        oficinas, 
-        abonados: this.gis.abonadosSignal().filter(ab => estadosFigura.includes(ab.estado)) 
-      },
-      recomendaciones,
-    });
-  }
-
-  /**
-   * Genera recomendaciones de expansión basadas en los elementos encontrados.
-   */
-  private calcularRecomendacionesAnalisis(
-    radiobasesLocales: number,
-    agentes: number,
-    oficinas: number,
-    abonados: number,
-    tipo: 'poligono' | 'ruta' | 'circulo',
-    parroquiasFigura: { name: string; municipio: string; estado: string }[],
-  ): any {
-    const localSugerencias: string[] = [];
-    const sufijo =
-      tipo === 'poligono' || tipo === 'circulo' ? 'dentro del área' : 'en la proximidad de la ruta';
-
-    // --- Métrica Inteligente de Carga Comercial (Radiobases vs Oficinas/Agentes) ---
-    const radiobasesRequeridas = oficinas + Math.ceil(agentes / 3);
-
-    if (radiobasesRequeridas === 0) {
-      if (radiobasesLocales === 0) {
-        localSugerencias.push(
-          `📡 Cobertura de Radiobases: Se detectaron 0 radiobases ${sufijo}. Sugerencia: Evaluar el despliegue de una nueva antena si la zona presenta baja cobertura.`,
-        );
-      } else if (radiobasesLocales === 1) {
-        localSugerencias.push(
-          `📡 Cobertura de Radiobases: Se detectó 1 radiobase ${sufijo}, brindando cobertura directa a este sector.`,
-        );
-      } else {
-        localSugerencias.push(
-          `📡 Cobertura de Radiobases: Se detectaron ${radiobasesLocales} radiobases ${sufijo}, asegurando cobertura local.`,
-        );
-      }
-    } else {
-      if (radiobasesLocales === 0) {
-        localSugerencias.push(
-          `🚨 Alerta de Capacidad: Se detectó alta actividad comercial (${oficinas} oficina(s) / ${agentes} agente(s)) pero 0 radiobases locales. Sugerencia: Instalar de forma prioritaria al menos ${radiobasesRequeridas} radiobase(s) para dar soporte al canal de ventas y atención.`,
-        );
-      } else if (radiobasesLocales < radiobasesRequeridas) {
-        localSugerencias.push(
-          `⚠️ Insuficiencia de Red: Se cuenta con ${radiobasesLocales} radiobase(s) para una demanda comercial estimada de ${radiobasesRequeridas} antenas. Sugerencia: Desplegar ${radiobasesRequeridas - radiobasesLocales} nueva(s) radiobase(s) para evitar congestión en los puntos de venta y oficinas.`,
-        );
-      } else {
-        localSugerencias.push(
-          `📡 Cobertura de Radiobases: Se detectaron ${radiobasesLocales} radiobases locales, lo cual es óptimo para soportar la carga de la infraestructura comercial del área (${radiobasesRequeridas} recomendada(s)).`,
-        );
-      }
-    }
-
-    // --- Métrica Local (Oficinas dentro del polígono) ---
-    if (oficinas === 0) {
-      localSugerencias.push(
-        `🏢 Atención Comercial: Se detectaron 0 oficinas ${sufijo}. Sugerencia: Instalar 1 Oficina de Atención en esta zona.`,
-      );
-    } else {
-      localSugerencias.push(
-        `🏢 Atención Comercial: Se detectaron ${oficinas} oficinas ${sufijo}, cubriendo la atención al cliente de la zona.`,
-      );
-    }
-
-    // --- Métrica Local (Agentes dentro de la figura) ---
-    if (agentes === 0) {
-      localSugerencias.push(
-        `🛍️ Red de Ventas: Se detectaron 0 agentes autorizados en los límites del dibujo. Sugerencia: Certificar 2 nuevos agentes comerciales en este sector.`,
-      );
-    } else if (agentes < 3) {
-      localSugerencias.push(
-        `🛍️ Red de Ventas: Se detectaron ${agentes} agentes autorizados. Sugerencia: Certificar al menos ${3 - agentes} nuevos agentes comerciales para fortalecer la presencia.`,
-      );
-    } else {
-      localSugerencias.push(
-        `🛍️ Red de Ventas: Presencia comercial sólida con ${agentes} agentes autorizados en los límites del dibujo.`,
-      );
-    }
-
-    return {
-      estadal: null, // Desactivado para no mezclar datos macro con recomendaciones locales directas
-      local: {
-        titulo: 'Métrica Local (Dentro del Polígono Dibujado)',
-        sugerencias: localSugerencias,
-      },
-    };
+      this.parroquiasGeoJsonData,
+      (actualizado) => this.analisisFigura.set(actualizado),
+    );
+    this.analisisFigura.set(resultado);
   }
 }

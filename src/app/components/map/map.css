@@ -20,12 +20,35 @@
   outline: none;
 }
 
-/* LEYENDA DEL MAPA */
-.map-legend-overlay {
+/* DOCK INFERIOR DERECHO (Gestor de Proyectos + Leyenda) */
+.bottom-right-dock {
   position: absolute;
   bottom: 20px;
   right: 20px;
   z-index: 1100;
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  pointer-events: none;
+}
+
+.bottom-right-dock > * {
+  pointer-events: auto;
+}
+
+@media (max-width: 768px) {
+  .bottom-right-dock {
+    bottom: 10px;
+    right: 10px;
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 10px;
+  }
+}
+
+/* LEYENDA DEL MAPA */
+.map-legend-overlay {
+  position: relative;
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);

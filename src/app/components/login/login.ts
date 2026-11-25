@@ -10,6 +10,7 @@ import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../services/auth/authService';
 import { ToastService } from '../../services/toast/toastService';
+import { ConfigService } from '../../services/config/configService';
 
 @Component({
   selector: 'app-login',
@@ -24,6 +25,7 @@ export class Login implements OnInit {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private toastService = inject(ToastService);
+  private configService = inject(ConfigService);
   private cdr = inject(ChangeDetectorRef);
 
   creds = { email: '', password: '' };
@@ -36,8 +38,8 @@ export class Login implements OnInit {
     this.route.queryParams.subscribe((params) => {
       if (params['expired'] === 'true') {
         setTimeout(() => {
-          this.toastService.showError(
-            'Su sesión ha expirado por inactividad. Por favor, ingrese de nuevo.',
+          this.toastService.showInfo(
+            'Su sesión ha expirado. Por favor, ingrese de nuevo.',
           );
           // Limpiar el parámetro de la URL para que no vuelva a aparecer al refrescar la página
           this.router.navigate([], {
@@ -68,6 +70,7 @@ export class Login implements OnInit {
     this.auth.login(this.creds).subscribe({
       next: (res) => {
         this.cargando = false;
+        this.configService.cargarConfiguracion().subscribe();
         console.log('Login exitoso', res);
 
         const user = this.auth.currentUser();
