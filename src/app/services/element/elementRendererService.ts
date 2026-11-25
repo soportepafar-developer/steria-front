@@ -1,9 +1,11 @@
 import { Injectable, inject } from '@angular/core';
 import * as L from 'leaflet';
 import { TipoElemento, RadioBase, Oficina, Agente, Abonado } from '../../models/gis';
+import { ConfigService } from '../config/configService';
 
 @Injectable({ providedIn: 'root' })
 export class ElementRendererService {
+  private configService = inject(ConfigService);
 
   public configIconos: any = {
     antenas: { icon: 'fa-broadcast-tower', color: '#FF1493', label: 'Radio Bases' },
@@ -12,9 +14,21 @@ export class ElementRendererService {
     agentes: { icon: 'fa-store', color: '#FF8C00', label: 'Agentes' }
   };
 
+  private getTipoConfig(tipo: TipoElemento) {
+    const base = this.configIconos[tipo] || { icon: 'fa-map-pin', color: '#3240A5', label: tipo };
+    if (tipo === 'ninguno') return base;
+    const custom = this.configService.getElementoConfig(tipo);
+    if (!custom) return base;
+    return {
+      icon: custom.icono.replace(/^fas\s+/, ''),
+      color: custom.color || base.color,
+      label: custom.nombre || base.label
+    };
+  }
+
   /* Crea un icono de pin personalizado usando FontAwesome */
   crearPinIcon(tipo: TipoElemento) {
-    const config = this.configIconos[tipo];
+    const config = this.getTipoConfig(tipo);
     return L.divIcon({
       html: `<div class="custom-pin-marker pin-${tipo}">
                <i class="fas ${config.icon}"></i>
@@ -31,7 +45,7 @@ export class ElementRendererService {
     tipo: TipoElemento,
     rows: { label: string; value?: string | number | null; badge?: boolean; badgeColor?: string; coords?: boolean; breakdown?: Record<string, number> }[]
   ) {
-    const cfg = this.configIconos[tipo];
+    const cfg = this.getTipoConfig(tipo);
     const filas = rows
       .filter(r => r.breakdown !== undefined || (r.value !== undefined && r.value !== null && r.value !== ''))
       .map(r => {
@@ -67,7 +81,7 @@ export class ElementRendererService {
   crearBadgeGroupIcon(items: { tipo: TipoElemento, total: number }[], level: 'region' | 'estado' | 'parroquia' = 'estado') {
     let html = `<div class="badge-group level-${level}">`;
     items.forEach(item => {
-      const config = this.configIconos[item.tipo];
+      const config = this.getTipoConfig(item.tipo);
       html += `
         <div class="badge-item" style="--bg-color: ${config.color}">
           <i class="fas ${config.icon}"></i>
@@ -92,12 +106,12 @@ export class ElementRendererService {
     segBreakdown: Record<string, number> | null = null,
     agenteBreakdown: Record<string, number> | null = null
   ) {
-    const mainColor = items.length > 0 ? this.configIconos[items[0].tipo].color : '#3240A5';
+    const mainColor = items.length > 0 ? this.getTipoConfig(items[0].tipo).color : '#3240A5';
     const icono = tipo === 'estado' ? 'fa-map-marker-alt' : 'fa-globe-americas';
 
     let rows = '';
     items.forEach(item => {
-      const config = this.configIconos[item.tipo];
+      const config = this.getTipoConfig(item.tipo);
       rows += `
         <div class="pagg-row">
           <span class="pagg-dot" style="background:${config.color}"></span>

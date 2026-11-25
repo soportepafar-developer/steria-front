@@ -1,5 +1,6 @@
 import { Component, inject, computed, ChangeDetectionStrategy } from '@angular/core';
 import { GisService } from '../../services/gis/gisService';
+import { ConfigService } from '../../services/config/configService';
 import { TipoElemento } from '../../models/gis';
 import { CommonModule } from '@angular/common';
 
@@ -13,6 +14,7 @@ import { CommonModule } from '@angular/common';
 })
 export class Totales {
   public gis = inject(GisService);
+  public config = inject(ConfigService);
 
   totalAntenas = computed(() => this.gis.radioBasesSignal().length);
   totalOficinas = computed(() => this.gis.oficinasSignal().length);

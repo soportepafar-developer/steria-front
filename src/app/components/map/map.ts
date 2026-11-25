@@ -432,6 +432,7 @@ export class Map implements AfterViewInit {
       drawnPane.style.pointerEvents = 'none'; // Permite clics a las capas inferiores, Leaflet maneja los clics de las figuras en SVG
     }
 
+    this.map.on('zoomstart', () => this.ocultarHoverInfo());
     this.map.on('zoomend', () => this.gis.zoomLevel.set(this.map.getZoom()));
     this.layerAggregated.addTo(this.map);
 
@@ -471,6 +472,7 @@ export class Map implements AfterViewInit {
           });
 
           layer.on('mousemove', (e: any) => {
+            if (this.gis.capasVisibles().poblacion && this.gis.zoomLevel() >= 8.5) return;
             if (this.hoverInfo()) {
               this.hoverInfo.update((h) =>
                 h ? { ...h, x: e.containerPoint.x + 15, y: e.containerPoint.y + 15 } : null,
@@ -874,8 +876,16 @@ export class Map implements AfterViewInit {
     return this.renderer.getEstiloPoblacion(pob, hayCapasEspeciales, true);
   }
 
+  private setInteractividadRegiones(interactive: boolean) {
+    if (!this.capaGeoJsonRegiones) return;
+    this.capaGeoJsonRegiones.eachLayer((l: any) => {
+      if (l?.options) l.options.interactive = interactive;
+    });
+  }
+
   private aplicarEstiloRegiones(_usarColorEstado: boolean) {
     if (!this.capaGeoJsonRegiones) return;
+    this.setInteractividadRegiones(true);
     this.capaGeoJsonRegiones.setStyle((f: any) => this.calcularEstiloEstado(f));
   }
 
@@ -899,10 +909,11 @@ export class Map implements AfterViewInit {
         return this.renderer.getEstiloPoblacion(pob, hayCapasEspeciales, true);
       });
 
-      // En modo combinado con zoom >= 8.5, dibujamos solo el contorno exterior de regiones/estados encima
+      // En modo combinado con zoom >= 8.5, dibujamos solo el contorno exterior de regiones/estados encima sin bloquear el hover de parroquias
       if (this.capaGeoJsonRegiones) {
         if (combinadoRegiones || combinadoEstados) {
           this.capaGeoJsonRegiones.addTo(this.map);
+          this.setInteractividadRegiones(false);
           this.capaGeoJsonRegiones.setStyle((f: any) => {
             const nombre = f.properties.estado || f.properties.name;
             const colorContorno = combinadoEstados
@@ -923,7 +934,10 @@ export class Map implements AfterViewInit {
       }
     } else {
       if (this.capaGeoJsonParroquias) this.map.removeLayer(this.capaGeoJsonParroquias);
-      if (this.capaGeoJsonRegiones) this.capaGeoJsonRegiones.addTo(this.map);
+      if (this.capaGeoJsonRegiones) {
+        this.setInteractividadRegiones(true);
+        this.capaGeoJsonRegiones.addTo(this.map);
+      }
 
       if (this.capaGeoJsonRegiones) {
         this.capaGeoJsonRegiones.setStyle((f: any) => {

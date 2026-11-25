@@ -1,0 +1,286 @@
+<div class="config-container">
+  <div class="header-section">
+    <div class="breadcrumb">
+      <span class="breadcrumb-link">Administración</span>
+      <span class="breadcrumb-separator">/</span>
+      <span class="breadcrumb-current">Configuración del Sistema</span>
+    </div>
+
+    <div class="header-actions" *ngIf="!modoEdicion()">
+      <button class="btn-primary" (click)="activarEdicion()">
+        <i class="fas fa-pen"></i> Editar configuración
+      </button>
+    </div>
+
+    <div class="header-actions" *ngIf="modoEdicion()">
+      <button class="btn-secondary" (click)="cancelarEdicion()" [disabled]="guardando()">
+        <i class="fas fa-times"></i> Cancelar
+      </button>
+      <button class="btn-secondary" (click)="restaurar()" [disabled]="guardando()">
+        <i class="fas fa-undo"></i> Restaurar predeterminados
+      </button>
+      <button class="btn-primary" (click)="guardar()" [disabled]="guardando()">
+        <i class="fas fa-save"></i> {{ guardando() ? 'Guardando...' : 'Guardar cambios' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs-bar">
+    <button class="tab-btn" [class.active]="tabActiva() === 'regiones'" (click)="tabActiva.set('regiones')">
+      <i class="fas fa-layer-group"></i> Esquemas de Regiones
+    </button>
+    <button class="tab-btn" [class.active]="tabActiva() === 'elementos'" (click)="tabActiva.set('elementos')">
+      <i class="fas fa-sliders-h"></i> Elementos Visibles
+    </button>
+  </div>
+
+  <!-- TAB 1: ESQUEMAS DE REGIONES -->
+  <div class="content-card" *ngIf="tabActiva() === 'regiones'">
+    <!-- MODO SOLO LECTURA -->
+    <ng-container *ngIf="!modoEdicion()">
+      <div class="readonly-header">
+        <div>
+          <span class="readonly-label">Esquema regional activo</span>
+          <h3 class="readonly-title">{{ esquemaActual.nombre }}</h3>
+        </div>
+        <span class="readonly-badge">{{ esquemaActual.regiones.length }} regiones</span>
+      </div>
+
+      <div class="readonly-regions-grid">
+        <div class="readonly-region-card" *ngFor="let reg of esquemaActual.regiones">
+          <div class="readonly-region-top">
+            <div class="readonly-region-name">
+              <span class="region-dot" [style.backgroundColor]="reg.color"></span>
+              <strong>{{ reg.nombre }}</strong>
+            </div>
+            <span class="count-badge">{{ reg.estados.length }}</span>
+          </div>
+          <div class="chips-wrap">
+            <span class="readonly-state-chip" *ngFor="let est of reg.estados">{{ est }}</span>
+            <span class="empty-hint" *ngIf="reg.estados.length === 0">Sin estados asignados</span>
+          </div>
+        </div>
+      </div>
+    </ng-container>
+
+    <!-- MODO EDICIÓN -->
+    <ng-container *ngIf="modoEdicion()">
+      <div class="scheme-toolbar">
+        <div class="scheme-selector-group">
+          <label class="field-label">Esquema regional:</label>
+          <select class="select-input" [(ngModel)]="draft.esquemaActivoId" (ngModelChange)="seleccionarEsquema()">
+            <option *ngFor="let esq of draft.esquemas" [value]="esq.id">{{ esq.nombre }}</option>
+          </select>
+
+          <button class="btn-outline-sm" (click)="estadoNuevoEsquema = !estadoNuevoEsquema">
+            <i class="fas fa-plus"></i> Nuevo esquema
+          </button>
+          <button class="btn-danger-sm" *ngIf="draft.esquemas.length > 1" (click)="eliminarEsquema(draft.esquemaActivoId)" title="Eliminar esquema actual">
+            <i class="fas fa-trash-alt"></i>
+          </button>
+        </div>
+
+        <span class="unassigned-pill" *ngIf="estadosSinAsignar.length > 0">
+          <i class="fas fa-exclamation-triangle"></i>
+          {{ estadosSinAsignar.length }} sin asignar
+        </span>
+      </div>
+
+      <div class="new-scheme-box" *ngIf="estadoNuevoEsquema">
+        <input type="text" class="text-input" placeholder="Ej. Esquema Comercial 2026" [(ngModel)]="nombreNuevoEsquema" />
+        <button class="btn-primary-sm" (click)="crearEsquema()">Crear</button>
+        <button class="btn-secondary-sm" (click)="estadoNuevoEsquema = false">Cancelar</button>
+      </div>
+
+      <div class="split-layout">
+        <!-- PANEL IZQUIERDO: LISTA DE REGIONES -->
+        <aside class="regions-sidebar">
+          <div class="panel-subheader">
+            <span>Regiones ({{ esquemaActual.regiones.length }})</span>
+            <button class="btn-primary-sm" (click)="agregarRegion()">
+              <i class="fas fa-plus"></i> Región
+            </button>
+          </div>
+
+          <div class="regions-list">
+            <div
+              class="region-list-item"
+              *ngFor="let reg of esquemaActual.regiones"
+              [class.active]="regionSeleccionada?.id === reg.id"
+              (click)="seleccionarRegion(reg.id)">
+              <input
+                type="color"
+                class="color-picker"
+                [(ngModel)]="reg.color"
+                (click)="$event.stopPropagation()"
+                title="Color de la región" />
+              <input
+                type="text"
+                class="region-name-input"
+                [(ngModel)]="reg.nombre"
+                (click)="$event.stopPropagation()"
+                placeholder="Nombre de la región" />
+              <span class="count-badge">{{ reg.estados.length }}</span>
+              <button
+                class="icon-delete-btn"
+                *ngIf="esquemaActual.regiones.length > 1"
+                (click)="eliminarRegion(reg.id, $event)"
+                title="Eliminar región">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <!-- PANEL DERECHO: ASIGNACIÓN DE ESTADOS -->
+        <section class="states-panel" *ngIf="regionSeleccionada as sel">
+          <div class="states-panel-header">
+            <div class="selected-region-title">
+              <span class="region-dot" [style.backgroundColor]="sel.color"></span>
+              <div>
+                <h3>{{ sel.nombre }}</h3>
+                <p>Haz clic en cualquier estado para agregarlo o moverlo</p>
+              </div>
+            </div>
+
+            <div class="search-wrapper">
+              <i class="fas fa-search"></i>
+              <input
+                type="text"
+                class="text-input search-input"
+                placeholder="Buscar estado..."
+                [(ngModel)]="filtroEstado" />
+            </div>
+          </div>
+
+          <!-- Bloque 1: En esta región -->
+          <div class="state-group">
+            <div class="group-title">
+              <span>En {{ sel.nombre }}</span>
+              <span class="group-count">{{ estadosEnRegionActual.length }}</span>
+            </div>
+            <div class="chips-wrap">
+              <button
+                type="button"
+                class="state-chip-btn active"
+                *ngFor="let est of estadosEnRegionActual"
+                [style.borderColor]="sel.color"
+                (click)="toggleEstadoEnRegion(sel.id, est)"
+                title="Quitar de esta región">
+                <span class="chip-dot" [style.backgroundColor]="sel.color"></span>
+                <span>{{ est }}</span>
+                <i class="fas fa-times chip-action-icon"></i>
+              </button>
+              <span class="empty-hint" *ngIf="estadosEnRegionActual.length === 0">
+                No hay estados asignados a esta región. Selecciona alguno abajo.
+              </span>
+            </div>
+          </div>
+
+          <!-- Bloque 2: Sin asignar -->
+          <div class="state-group" *ngIf="estadosSinAsignarFiltrados.length > 0">
+            <div class="group-title warning">
+              <span>Sin asignar</span>
+              <span class="group-count">{{ estadosSinAsignarFiltrados.length }}</span>
+            </div>
+            <div class="chips-wrap">
+              <button
+                type="button"
+                class="state-chip-btn unassigned"
+                *ngFor="let est of estadosSinAsignarFiltrados"
+                (click)="toggleEstadoEnRegion(sel.id, est)"
+                title="Asignar a esta región">
+                <i class="fas fa-plus chip-action-icon"></i>
+                <span>{{ est }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Bloque 3: En otras regiones -->
+          <div class="state-group" *ngIf="estadosEnOtrasRegiones.length > 0">
+            <div class="group-title">
+              <span>En otras regiones (clic para mover aquí)</span>
+              <span class="group-count">{{ estadosEnOtrasRegiones.length }}</span>
+            </div>
+            <div class="chips-wrap">
+              <button
+                type="button"
+                class="state-chip-btn other"
+                *ngFor="let item of estadosEnOtrasRegiones"
+                (click)="toggleEstadoEnRegion(sel.id, item.estado)"
+                [title]="'Mover desde ' + item.region">
+                <span class="chip-dot" [style.backgroundColor]="item.color"></span>
+                <span>{{ item.estado }}</span>
+                <small>{{ item.region }}</small>
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </ng-container>
+  </div>
+
+  <!-- TAB 2: ELEMENTOS VISIBLES -->
+  <div class="content-card" *ngIf="tabActiva() === 'elementos'">
+    <p class="section-desc">Controla qué tipos de elementos se muestran en el menú lateral del mapa y en la barra superior de totales.</p>
+
+    <!-- MODO SOLO LECTURA -->
+    <div class="elements-list" *ngIf="!modoEdicion()">
+      <div class="element-card" *ngFor="let el of configLectura.elementos">
+        <div class="element-row">
+          <div class="element-left">
+            <div class="element-icon-box readonly" [style.backgroundColor]="el.color + '1a'" [style.color]="el.color">
+              <i [class]="el.icono"></i>
+            </div>
+            <div class="element-fields">
+              <strong class="readonly-el-name">{{ el.nombre }}</strong>
+              <span class="element-id-tag">Clave: {{ el.id }}</span>
+            </div>
+          </div>
+
+          <div class="element-right">
+            <span class="switch-pill" [class.on]="el.visible">
+              {{ el.visible ? 'Visible' : 'Oculto' }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODO EDICIÓN -->
+    <div class="elements-list" *ngIf="modoEdicion()">
+      <div class="element-card" *ngFor="let el of draft.elementos">
+        <div class="element-row">
+          <div class="element-left">
+            <button type="button" class="element-icon-box" (click)="toggleSelectorIcono(el.id)"
+              [style.backgroundColor]="el.color + '1a'" [style.color]="el.color" title="Cambiar ícono">
+              <i [class]="el.icono"></i>
+            </button>
+            <div class="element-fields">
+              <input type="text" class="text-input" [(ngModel)]="el.nombre" />
+              <span class="element-id-tag">Clave: {{ el.id }} · Clic en el ícono para cambiar</span>
+            </div>
+          </div>
+
+          <div class="element-right">
+            <input type="color" class="color-picker" [(ngModel)]="el.color" title="Color del indicador" />
+            <label class="switch-label">
+              <input type="checkbox" [(ngModel)]="el.visible" />
+              <span class="switch-pill" [class.on]="el.visible">
+                {{ el.visible ? 'Visible' : 'Oculto' }}
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="icon-picker-grid" *ngIf="elementoIconoAbiertoId === el.id">
+          <button type="button" class="icon-option-btn" *ngFor="let ic of iconosDisponibles"
+            [class.selected]="el.icono === ic.clase" (click)="seleccionarIcono(el, ic.clase)" [title]="ic.label">
+            <i [class]="ic.clase" [style.color]="el.color"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,11 +1,11 @@
 <div class="stats-floating-bar" *ngIf="visible()">
   <!-- Radio Bases -->
-  <div class="stat-item clickable" [class.active]="esActivo('antenas')" [class.dimmed]="hayFiltroActivo() && !esActivo('antenas')" (click)="toggleElemento('antenas')" title="Mostrar/ocultar Radio Bases">
-    <div class="icon-circle pink">
-      <i class="fas fa-broadcast-tower"></i>
+  <div class="stat-item clickable" *ngIf="config.isElementoVisible('antenas')" [class.active]="esActivo('antenas')" [class.dimmed]="hayFiltroActivo() && !esActivo('antenas')" (click)="toggleElemento('antenas')" title="Mostrar/ocultar Radio Bases">
+    <div class="icon-circle pink" [style.backgroundColor]="(config.getElementoConfig('antenas')?.color || '#FF1493') + '1a'" [style.color]="config.getElementoConfig('antenas')?.color || '#FF1493'">
+      <i [class]="config.getElementoConfig('antenas')?.icono || 'fas fa-broadcast-tower'"></i>
     </div>
     <div class="stat-texts">
-      <span class="label">RADIO BASES</span>
+      <span class="label">{{ (config.getElementoConfig('antenas')?.nombre || 'RADIO BASES') | uppercase }}</span>
       <span class="value">{{ formatear(totalAntenas()) }}</span>
     </div>
   </div>
@@ -13,12 +13,12 @@
   <div class="divider"></div>
 
   <!-- Abonados -->
-  <div class="stat-item clickable" [class.active]="esActivo('abonados')" [class.dimmed]="hayFiltroActivo() && !esActivo('abonados')" (click)="toggleElemento('abonados')" title="Mostrar/ocultar Abonados">
-    <div class="icon-circle blue">
-      <i class="fas fa-user-check"></i>
+  <div class="stat-item clickable" *ngIf="config.isElementoVisible('abonados')" [class.active]="esActivo('abonados')" [class.dimmed]="hayFiltroActivo() && !esActivo('abonados')" (click)="toggleElemento('abonados')" title="Mostrar/ocultar Abonados">
+    <div class="icon-circle blue" [style.backgroundColor]="(config.getElementoConfig('abonados')?.color || '#00BFFF') + '1a'" [style.color]="config.getElementoConfig('abonados')?.color || '#00BFFF'">
+      <i [class]="config.getElementoConfig('abonados')?.icono || 'fas fa-user-check'"></i>
     </div>
     <div class="stat-texts">
-      <span class="label">ABONADOS</span>
+      <span class="label">{{ (config.getElementoConfig('abonados')?.nombre || 'ABONADOS') | uppercase }}</span>
       <span class="value">{{ formatear(totalAbonados()) }}</span>
     </div>
   </div>
@@ -26,12 +26,12 @@
   <div class="divider"></div>
 
   <!-- Oficinas -->
-  <div class="stat-item clickable" [class.active]="esActivo('oficinas')" [class.dimmed]="hayFiltroActivo() && !esActivo('oficinas')" (click)="toggleElemento('oficinas')" title="Mostrar/ocultar Oficinas">
-    <div class="icon-circle green">
-      <i class="fas fa-building"></i>
+  <div class="stat-item clickable" *ngIf="config.isElementoVisible('oficinas')" [class.active]="esActivo('oficinas')" [class.dimmed]="hayFiltroActivo() && !esActivo('oficinas')" (click)="toggleElemento('oficinas')" title="Mostrar/ocultar Oficinas">
+    <div class="icon-circle green" [style.backgroundColor]="(config.getElementoConfig('oficinas')?.color || '#32CD32') + '1a'" [style.color]="config.getElementoConfig('oficinas')?.color || '#32CD32'">
+      <i [class]="config.getElementoConfig('oficinas')?.icono || 'fas fa-building'"></i>
     </div>
     <div class="stat-texts">
-      <span class="label">OFICINAS</span>
+      <span class="label">{{ (config.getElementoConfig('oficinas')?.nombre || 'OFICINAS') | uppercase }}</span>
       <span class="value">{{ formatear(totalOficinas()) }}</span>
     </div>
   </div>
@@ -39,12 +39,12 @@
   <div class="divider"></div>
 
   <!-- Agentes -->
-  <div class="stat-item clickable" [class.active]="esActivo('agentes')" [class.dimmed]="hayFiltroActivo() && !esActivo('agentes')" (click)="toggleElemento('agentes')" title="Mostrar/ocultar Agentes">
-    <div class="icon-circle orange">
-      <i class="fas fa-store"></i>
+  <div class="stat-item clickable" *ngIf="config.isElementoVisible('agentes')" [class.active]="esActivo('agentes')" [class.dimmed]="hayFiltroActivo() && !esActivo('agentes')" (click)="toggleElemento('agentes')" title="Mostrar/ocultar Agentes">
+    <div class="icon-circle orange" [style.backgroundColor]="(config.getElementoConfig('agentes')?.color || '#FF8C00') + '1a'" [style.color]="config.getElementoConfig('agentes')?.color || '#FF8C00'">
+      <i [class]="config.getElementoConfig('agentes')?.icono || 'fas fa-store'"></i>
     </div>
     <div class="stat-texts">
-      <span class="label">AGENTES</span>
+      <span class="label">{{ (config.getElementoConfig('agentes')?.nombre || 'AGENTES') | uppercase }}</span>
       <span class="value">{{ formatear(totalAgentes()) }}</span>
     </div>
   </div>

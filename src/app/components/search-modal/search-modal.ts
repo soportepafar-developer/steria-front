@@ -49,7 +49,6 @@ export class SearchModal {
           this.itemAEliminar = null;
         }
       },
-      { allowSignalWrites: true },
     );
 
     effect(
@@ -84,7 +83,6 @@ export class SearchModal {
 
         this.resultados.set(filtrados);
       },
-      { allowSignalWrites: true },
     );
   }
 

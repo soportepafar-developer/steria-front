@@ -21,7 +21,8 @@ export const authGuard: CanActivateFn = (route, state) => {
       return true;
     }
   } else {
-    router.navigate(['/login']); // Bloqueado, vuelve al login
+    const expirado = auth.limpiarSiExpirado();
+    router.navigate(['/login'], expirado ? { queryParams: { expired: 'true' } } : undefined);
     return false;
   }
 };

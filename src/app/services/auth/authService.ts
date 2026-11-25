@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { tap } from 'rxjs/operators';
 import { Router } from '@angular/router';
 import { environment } from '../../../environments/environment';
+import { ToastService } from '../toast/toastService';
 
 @Injectable({
   providedIn: 'root'
@@ -10,6 +11,7 @@ import { environment } from '../../../environments/environment';
 export class AuthService {
   private http = inject(HttpClient);
   private router = inject(Router);
+  private toastService = inject(ToastService);
   private URL_API = `${environment.apiUrl}/auth`;
 
   private getStoredUser() {
@@ -99,15 +101,44 @@ export class AuthService {
     return 'invitado';
   }
 
-  // Función para saber si el usuario está logueado
-  estaLogueado(): boolean {
-    return !!localStorage.getItem('token_geo');
+  private cachedToken: string | null = null;
+  private cachedExpMs: number | null = null;
+
+  private isTokenExpired(token: string): boolean {
+    if (this.cachedToken !== token) {
+      this.cachedToken = token;
+      const payload = this.decodeToken(token);
+      this.cachedExpMs = payload && typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+    }
+    if (this.cachedExpMs === null) return false;
+    return Date.now() >= this.cachedExpMs;
   }
 
-  logout() {
+  // Función para saber si el usuario está logueado con un token vigente
+  estaLogueado(): boolean {
+    const token = localStorage.getItem('token_geo');
+    return !!token && !this.isTokenExpired(token);
+  }
+
+  // Limpia la sesión si había un token guardado que ya expiró
+  limpiarSiExpirado(): boolean {
+    const token = localStorage.getItem('token_geo');
+    if (token && this.isTokenExpired(token)) {
+      localStorage.removeItem('token_geo');
+      localStorage.removeItem('user_geo');
+      this.currentUser.set(null);
+      return true;
+    }
+    return false;
+  }
+
+  logout(mostrarToast = true) {
     localStorage.removeItem('token_geo');
     localStorage.removeItem('user_geo');
     this.currentUser.set(null);
     this.router.navigate(['/login']);
+    if (mostrarToast) {
+      this.toastService.showInfo('Sesión cerrada correctamente.');
+    }
   }
 }
