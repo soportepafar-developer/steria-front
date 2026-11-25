@@ -3,12 +3,14 @@ import { TipoElemento, CapasEstado } from '../../models/gis';
 import { CoordService } from '../coord/coordService';
 import { ElementService } from '../element/elementService';
 import { MapService } from '../map/mapService';
+import { ConfigService } from '../config/configService';
 
 @Injectable({ providedIn: 'root' })
 export class GisService {
   private coord = inject(CoordService);
   private element = inject(ElementService);
   private map = inject(MapService);
+  private config = inject(ConfigService);
 
   constructor() {
     // La configuración geográfica se cargará junto con los datos
@@ -75,9 +77,10 @@ export class GisService {
   setDetalleRegiones(tipo: TipoElemento) { this.map.setDetalleRegiones(tipo); }
 
   // Carga de datos
-  cargarDatos() { 
+  cargarDatos() {
+    this.config.cargarConfiguracion().subscribe();
     this.element.cargarConfiguracionGeografica();
-    this.element.cargarDatos(); 
+    this.element.cargarDatos();
   }
 
   // Agregar elementos

@@ -7,6 +7,7 @@ import { GeocodingService } from '../gis/geocodingService';
 import { GisMathService } from '../gis/gisMathService';
 import { environment } from '../../../environments/environment';
 import { ToastService } from '../toast/toastService';
+import { ConfigService } from '../config/configService';
 import * as L from 'leaflet';
 
 @Injectable({ providedIn: 'root' })
@@ -16,6 +17,7 @@ export class ElementService {
   private geocoding = inject(GeocodingService);
   private mathService = inject(GisMathService);
   private toastService = inject(ToastService);
+  private config = inject(ConfigService);
   private API_URL = environment.apiUrl;
 
   // Signals de datos
@@ -333,10 +335,16 @@ export class ElementService {
 
   getTotalesPorRegion(tipo: TipoElemento): Map<string, number> {
     const m = new Map<string, number>();
+    const tieneEsquema = !!this.config.esquemaActivo()?.regiones?.length;
     this.resumenSignal()
       .filter(r => r.tipo === tipo)
       .forEach(r => {
-        m.set(r.region, (m.get(r.region) || 0) + Number(r.total));
+        const region = tieneEsquema
+          ? this.config.getRegionDeEstado(r.estado)
+          : r.region;
+        if (region) {
+          m.set(region, (m.get(region) || 0) + Number(r.total));
+        }
       });
     return m;
   }
